@@ -3,19 +3,13 @@ package db
 import (
 	"database/sql"
 	"fmt"
-
-	_ "github.com/lib/pq"
 )
 
 func InitDB(connStr string) (*sql.DB, error) {
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open("upskill_db", connStr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open db error: %w", err)
 	}
-	if err = db.Ping(); err != nil {
-		return nil, err
-	}
-	fmt.Println("[DB] Подключение к PostgreSQL успешно")
 	return db, nil
 }
 
@@ -41,6 +35,11 @@ func CreateTables(db *sql.DB) error {
             badge_id INT,
             progress INT DEFAULT 0,
             PRIMARY KEY(user_id, badge_id)
+        )`,
+		`CREATE TABLE IF NOT EXISTS recommendations (
+            user_id INT,
+            plan TEXT,
+            created_at TIMESTAMP DEFAULT now()
         )`,
 	}
 	for _, q := range queries {

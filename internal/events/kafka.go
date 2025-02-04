@@ -9,14 +9,13 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-func InitKafkaWriter(kafkaAddr, topic string) *kafka.Writer {
-	writer := &kafka.Writer{
+func NewKafkaWriter(kafkaAddr, topicName string) *kafka.Writer {
+	return &kafka.Writer{
 		Addr:         kafka.TCP(kafkaAddr),
-		Topic:        topic,
+		Topic:        topicName,
 		Balancer:     &kafka.LeastBytes{},
 		RequiredAcks: 1,
 	}
-	return writer
 }
 
 func ProduceEvent(writer *kafka.Writer, eventName, payload string) {

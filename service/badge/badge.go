@@ -8,13 +8,13 @@ import (
 	"net/http"
 
 	"github.com/segmentio/kafka-go"
+
 	"upskill-backend/internal/events"
 )
 
-func StartBadgeService(db *sql.DB, kafkaWriter *kafka.Writer) {
+func StartBadgeService(db *sql.DB, writer *kafka.Writer) {
 	mux := http.NewServeMux()
 
-	// GET /badges
 	mux.HandleFunc("/badges", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			rows, err := db.Query(`SELECT id, name, description FROM badges`)
@@ -32,7 +32,7 @@ func StartBadgeService(db *sql.DB, kafkaWriter *kafka.Writer) {
 					description string
 				)
 				if err := rows.Scan(&id, &name, &description); err != nil {
-					log.Println("scan error", err)
+					log.Println("[BadgeService] scan error", err)
 					continue
 				}
 				badges = append(badges, map[string]interface{}{
@@ -48,7 +48,6 @@ func StartBadgeService(db *sql.DB, kafkaWriter *kafka.Writer) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
-	// POST /badges/create
 	mux.HandleFunc("/badges/create", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -70,10 +69,9 @@ func StartBadgeService(db *sql.DB, kafkaWriter *kafka.Writer) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		go events.ProduceEvent(kafkaWriter, "BadgeCreated", fmt.Sprintf("Badge ID: %d", badgeID))
-
+		go events.ProduceEvent(writer, "BadgeCreated", fmt.Sprintf("Badge ID: %d", badgeID))
 		w.WriteHeader(http.StatusCreated)
-		fmt.Fprintf(w, "Badge created with ID=%d\\n", badgeID)
+		fmt.Fprintf(w, "Badge created with ID=%d\n", badgeID)
 	})
 
 	log.Println("[BadgeService] Запуск на :8083")

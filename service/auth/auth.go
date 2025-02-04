@@ -8,17 +8,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/segmentio/kafka-go"
 	"golang.org/x/crypto/bcrypt"
+
+	"upskill-backend/internal/config"
 	"upskill-backend/internal/events"
 )
 
-var (
-	jwtSecret = []byte("SUPER_SECRET_KEY")
-)
-
-func StartAuthService(db *sql.DB, kafkaWriter *kafka.Writer) {
+func StartAuthService(db *sql.DB, writer *kafka.Writer, cfg *config.Config) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/auth/register", func(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +31,20 @@ func StartAuthService(db *sql.DB, kafkaWriter *kafka.Writer) {
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+
+		// Валидация
+		if !ValidateName(body.FirstName) || !ValidateName(body.LastName) {
+			http.Error(w, "Invalid name", http.StatusBadRequest)
+			return
+		}
+		if !ValidateEmail(body.Email) {
+			http.Error(w, "Invalid email", http.StatusBadRequest)
+			return
+		}
+		if !ValidatePassword(body.Password) {
+			http.Error(w, "Password does not meet requirements", http.StatusBadRequest)
 			return
 		}
 
@@ -53,10 +64,9 @@ func StartAuthService(db *sql.DB, kafkaWriter *kafka.Writer) {
 			return
 		}
 
-		go events.ProduceEvent(kafkaWriter, "UserCreated", fmt.Sprintf("UserID=%d", newID))
-
+		go events.ProduceEvent(writer, "UserCreated", fmt.Sprintf("UserID=%d", newID))
 		w.WriteHeader(http.StatusCreated)
-		fmt.Fprintf(w, "Registered user ID=%d\\n", newID)
+		fmt.Fprintf(w, "Registered user ID=%d\n", newID)
 	})
 
 	mux.HandleFunc("/auth/login", func(w http.ResponseWriter, r *http.Request) {
@@ -77,26 +87,24 @@ func StartAuthService(db *sql.DB, kafkaWriter *kafka.Writer) {
 			userID     int
 			storedHash string
 		)
-		err := db.QueryRow(`SELECT id, password_hash FROM users WHERE email=$1`, body.Email).
-			Scan(&userID, &storedHash)
+		err := db.QueryRow(`SELECT id, password_hash FROM users WHERE email=$1`, body.Email).Scan(&userID, &storedHash)
 		if err != nil {
 			http.Error(w, "User not found", http.StatusUnauthorized)
 			return
 		}
-
 		if err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(body.Password)); err != nil {
 			http.Error(w, "Invalid password", http.StatusUnauthorized)
 			return
 		}
 
-		accessToken, err := generateJWT(userID)
+		accessToken, err := GenerateJWT(userID, cfg.JwtSecret)
 		if err != nil {
 			http.Error(w, "JWT error", http.StatusInternalServerError)
 			return
 		}
 
 		refreshToken := fmt.Sprintf("rf_%d", time.Now().UnixNano())
-		refreshExpires := time.Now().Add(24 * 7 * time.Hour)
+		refreshExpires := time.Now().Add(7 * 24 * time.Hour)
 
 		_, err = db.Exec(`UPDATE users SET refresh_token=$1, refresh_expires=$2 WHERE id=$3`,
 			refreshToken, refreshExpires, userID)
@@ -104,7 +112,6 @@ func StartAuthService(db *sql.DB, kafkaWriter *kafka.Writer) {
 			http.Error(w, "DB error", http.StatusInternalServerError)
 			return
 		}
-
 		resp := map[string]string{
 			"access_token":  accessToken,
 			"refresh_token": refreshToken,
@@ -125,13 +132,11 @@ func StartAuthService(db *sql.DB, kafkaWriter *kafka.Writer) {
 			http.Error(w, "Bad request", http.StatusBadRequest)
 			return
 		}
-
 		var (
 			userID  int
 			expires time.Time
 		)
-		err := db.QueryRow(`SELECT id, refresh_expires FROM users WHERE refresh_token=$1`, body.RefreshToken).
-			Scan(&userID, &expires)
+		err := db.QueryRow(`SELECT id, refresh_expires FROM users WHERE refresh_token=$1`, body.RefreshToken).Scan(&userID, &expires)
 		if err != nil {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
@@ -140,8 +145,7 @@ func StartAuthService(db *sql.DB, kafkaWriter *kafka.Writer) {
 			http.Error(w, "Refresh token expired", http.StatusUnauthorized)
 			return
 		}
-
-		newAccess, err := generateJWT(userID)
+		newAccess, err := GenerateJWT(userID, cfg.JwtSecret)
 		if err != nil {
 			http.Error(w, "JWT error", http.StatusInternalServerError)
 			return
@@ -155,14 +159,4 @@ func StartAuthService(db *sql.DB, kafkaWriter *kafka.Writer) {
 
 	log.Println("[AuthService] Запуск на :8081")
 	http.ListenAndServe(":8081", mux)
-}
-
-func generateJWT(userID int) (string, error) {
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"exp":     time.Now().Add(time.Hour * 24).Unix(),
-		"iat":     time.Now().Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
 }

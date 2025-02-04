@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+
 	"upskill-backend/internal/events"
 )
 
-func StartUserService(db *sql.DB, kafkaWriter *kafka.Writer) {
+func StartUserService(db *sql.DB, writer *kafka.Writer) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
@@ -34,17 +35,16 @@ func StartUserService(db *sql.DB, kafkaWriter *kafka.Writer) {
 					createdAt time.Time
 				)
 				if err := rows.Scan(&id, &firstName, &lastName, &email, &createdAt); err != nil {
-					log.Println("Ошибка scan", err)
+					log.Println("[UserService] scan error", err)
 					continue
 				}
-				user := map[string]interface{}{
+				result = append(result, map[string]interface{}{
 					"id":         id,
 					"first_name": firstName,
 					"last_name":  lastName,
 					"email":      email,
 					"created_at": createdAt,
-				}
-				result = append(result, user)
+				})
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(result)
@@ -76,8 +76,7 @@ func StartUserService(db *sql.DB, kafkaWriter *kafka.Writer) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		go events.ProduceEvent(kafkaWriter, "UserUpdated", fmt.Sprintf("User ID: %s updated", userID))
-
+		go events.ProduceEvent(writer, "UserUpdated", fmt.Sprintf("User ID: %s updated", userID))
 		w.Write([]byte("User updated"))
 	})
 
@@ -95,8 +94,7 @@ func StartUserService(db *sql.DB, kafkaWriter *kafka.Writer) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		go events.ProduceEvent(kafkaWriter, "UserDeleted", fmt.Sprintf("User ID: %s deleted", userID))
-
+		go events.ProduceEvent(writer, "UserDeleted", fmt.Sprintf("User ID: %s deleted", userID))
 		w.Write([]byte("User deleted"))
 	})
 
