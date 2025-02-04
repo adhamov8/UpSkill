@@ -3,10 +3,12 @@ package db
 import (
 	"database/sql"
 	"fmt"
+
+	_ "github.com/lib/pq"
 )
 
 func InitDB(connStr string) (*sql.DB, error) {
-	db, err := sql.Open("upskill_db", connStr)
+	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("open db error: %w", err)
 	}
