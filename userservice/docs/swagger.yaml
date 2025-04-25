@@ -1,0 +1,7 @@
+basePath: /api/user
+info:
+  contact: {}
+  title: UpSkill UserService API
+  version: "1.0"
+paths: {}
+swagger: "2.0"

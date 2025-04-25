@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:15
+    env_file: .env
+    ports: ["5433:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 5s
+      retries: 5
+
+  authservice:
+    build: ./authservice
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: [ "8080:8080" ]
+
+  userservice:
+    build: ./userservice
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: [ "8081:8081" ]
+  aiservice:
+    build: ./aiservice
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: [ "8082:8082" ]
+
+  progressservice:
+    build: ./progressservice
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: [ "8083:8083" ]
+
+  gateway:
+    build: ./gateway
+    env_file: .env
+    depends_on:
+      authservice: { condition: service_started }
+      userservice: { condition: service_started }
+      aiservice: { condition: service_started }
+      progressservice: { condition: service_started }
+    ports: [ "8000:8000" ]
